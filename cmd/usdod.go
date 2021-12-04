@@ -7,13 +7,8 @@ import (
 // usdodCmd represents the usdod command
 var usdodCmd = &cobra.Command{
 	Use:   "usdod",
-	Short: "A brief description of your command",
-	Long: `A longer description that spans multiple lines and likely contains examples
-and usage of using your command. For example:
-
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
+	Short: "us department of devense method",
+	Long:  `secure delete a file. this method was given out by the department of devense.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		runmethod(3, args)
 	},
