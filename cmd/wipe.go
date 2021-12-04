@@ -44,7 +44,7 @@ func runmethod(rule int, file_args []string) {
 		}
 		if !keep {
 			base_name := filepath.Base(file)
-			base_name = strings.Repeat(base_name, len(base_name))
+			base_name = strings.Repeat("0", len(base_name))
 			os.Rename(file, filepath.Join(filepath.Dir(file), base_name))
 			err = os.Remove(filepath.Join(filepath.Dir(file), base_name))
 			if err != nil {
