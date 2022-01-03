@@ -15,5 +15,6 @@ var fastCmd = &cobra.Command{
 }
 
 func init() {
+
 	rootCmd.AddCommand(fastCmd)
 }

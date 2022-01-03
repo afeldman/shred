@@ -1,13 +1,14 @@
 package cmd
 
 import (
-	"fmt"
-	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
 
 	wipe "github.com/0x9ef/go-wiper/wipe"
+	log "github.com/sirupsen/logrus"
 )
 
 var mappedPolicy = map[int]*wipe.Policy{
@@ -20,38 +21,73 @@ var mappedPolicy = map[int]*wipe.Policy{
 func runmethod(rule int, file_args []string) {
 	head()
 
+	switch verbose {
+	case 0:
+		log.SetLevel(log.PanicLevel)
+	case 1:
+		log.SetLevel(log.FatalLevel)
+	case 2:
+		log.SetLevel(log.ErrorLevel)
+	case 3:
+		log.SetLevel(log.WarnLevel)
+	case 4:
+		log.SetLevel(log.InfoLevel)
+	case 5:
+		log.SetLevel(log.DebugLevel)
+	case 6:
+		log.SetLevel(log.TraceLevel)
+	default:
+		log.SetLevel(log.InfoLevel)
+	}
+	log.Debugln("Log level is: " + strconv.Itoa(verbose))
+
+	log.Infoln("log rule is: " + strconv.Itoa(rule))
+
 	policy, ok := mappedPolicy[rule]
 	if !ok {
 		panic("wiper: provided unknown wipe rule")
 	}
 
 	wrule := policy.Rule
-	fmt.Printf("Selected rule:\n%s\n", policy.String())
+	log.Infoln("Selected rule: " + policy.String())
 
 	var files []string
 
-	switch len(file_args) {
-	case 0:
+	log.Debugln(file_args)
+
+	if len(file_args) == 0 {
+		log.Debugln("Stop system no file set")
 		os.Exit(0)
-	default:
+	} else {
 		files = run_files(file_args)
 	}
 
+	wg := sync.WaitGroup{}
+
+	// shread all files with wipe
 	for _, file := range files {
-		err := wipe.Wipe(file, wrule)
-		if err != nil {
-			panic(err)
-		}
-		if !keep {
-			base_name := filepath.Base(file)
-			base_name = strings.Repeat("0", len(base_name))
-			os.Rename(file, filepath.Join(filepath.Dir(file), base_name))
-			err = os.Remove(filepath.Join(filepath.Dir(file), base_name))
+		log.Debugln("delete file: " + file)
+
+		wg.Add(1)
+		go func(file_ string, wg *sync.WaitGroup) {
+			err := wipe.Wipe(file_, wrule)
 			if err != nil {
-				os.Exit(1)
+				panic(err)
 			}
-		}
+			if !keep {
+				base_name := filepath.Base(file_)
+				base_name = strings.Repeat("0", len(base_name))
+				os.Rename(file_, filepath.Join(filepath.Dir(file_), base_name))
+				err = os.Remove(filepath.Join(filepath.Dir(file_), base_name))
+				if err != nil {
+					os.Exit(1)
+				}
+			}
+			wg.Done()
+		}(file, &wg)
 	}
+
+	wg.Wait()
 
 }
 
@@ -59,9 +95,10 @@ func run_files(files []string) []string {
 	var ret_file []string
 	for _, file := range files {
 
+		log.Infoln("check file: " + file)
 		fi, err := os.Stat(file)
 		if err != nil {
-			fmt.Println(err)
+			log.Println(err)
 			os.Exit(1)
 		}
 
