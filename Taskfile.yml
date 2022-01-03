@@ -1,0 +1,16 @@
+# https://taskfile.dev
+
+version: '3'
+
+tasks:
+  run: 
+    desc: Run the application
+    cmds: 
+    - GOFLAGS=-mod=mod go run shared.go
+  default:
+    cmds:
+    - GOFLAGS=-mod=mod go run shared.go
+  build: 
+    desc: Build the application
+    cmds: 
+    - GOFLAGS=-mod=mod go build -o build/shread
