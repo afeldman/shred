@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
@@ -18,8 +19,12 @@ var (
 		Short: "Delete files safely",
 		Long: `Sometimes it is import to delete all information on the harddrive secure.
 use this tool to delete the files as you wish`,
-		// Uncomment the following line if your bare application
-		// has an action associated with it
+		Run: func(cmd *cobra.Command, args []string) {
+			if len(args) == 0 {
+				log.Fatal("No files or directories provided. Use 'shred --help' for usage information.")
+			}
+			runmethod(3, args) // Default to usdod
+		},
 	}
 )
 
@@ -32,11 +37,10 @@ func Execute() {
 		os.Exit(1)
 	}
 
-	//cobra.CheckErr(rootCmd.Execute())
 }
 
 func init() {
 	rootCmd.PersistentFlags().BoolVarP(&keep, "keep", "k", false, "keep files")
 	rootCmd.PersistentFlags().BoolVarP(&report, "report", "r", false, "Reporting about all operations?")
-	rootCmd.PersistentFlags().IntVarP(&verbose, "verbose", "v", 4, "verbose")
+	rootCmd.PersistentFlags().IntVarP(&verbose, "verbose", "v", 4, "Verbose level (0-6)")
 }

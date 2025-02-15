@@ -1,26 +1,30 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	wipe "github.com/0x9ef/go-wiper/wipe"
+	"github.com/cheggaaa/pb/v3"
 	log "github.com/sirupsen/logrus"
 )
 
 var mappedPolicy = map[int]*wipe.Policy{
-	1: &wipe.Policy{"Fast", "Data will be overwrited with zeroes (1 passes)", wipe.RuleFast},
-	2: &wipe.Policy{"VSITR", "German VSITR (7 passes)", wipe.RuleVSITR},
-	3: &wipe.Policy{"UsDod5220_22_M", "US Department of Defense DoD 5220.22-M (3 passes)", wipe.RuleUsDod5220_22_M},
-	4: &wipe.Policy{"Gutmann", "Peter Gutmann Secure Method (35 passes)", wipe.RuleGutmann},
+	1: {Name: "Fast", Description: "Data will be overwritten with zeroes (1 pass)", Rule: wipe.RuleFast},
+	2: {Name: "VSITR", Description: "German VSITR (7 passes)", Rule: wipe.RuleVSITR},
+	3: {Name: "UsDod5220_22_M", Description: "US Department of Defense DoD 5220.22-M (3 passes)", Rule: wipe.RuleUsDod5220_22_M},
+	4: {Name: "Gutmann", Description: "Peter Gutmann Secure Method (35 passes)", Rule: wipe.RuleGutmann},
 }
 
-func runmethod(rule int, file_args []string) {
+func runmethod(rule int, file_args []string) error {
 	head()
 
+	// Log-Level setzen
 	switch verbose {
 	case 0:
 		log.SetLevel(log.PanicLevel)
@@ -43,84 +47,133 @@ func runmethod(rule int, file_args []string) {
 
 	log.Infoln("log rule is: " + strconv.Itoa(rule))
 
+	if rule == 0 {
+		rule = 3 // Default to UsDod5220_22_M
+	}
+
 	policy, ok := mappedPolicy[rule]
 	if !ok {
-		panic("wiper: provided unknown wipe rule")
+		var validRules []string
+		for k, v := range mappedPolicy {
+			validRules = append(validRules, fmt.Sprintf("%d: %s", k, v.Name))
+		}
+		return fmt.Errorf("wiper: provided unknown wipe rule: %d. Valid rules are: %v", rule, validRules)
 	}
 
 	wrule := policy.Rule
 	log.Infoln("Selected rule: " + policy.String())
 
 	var files []string
+	var err error
 
 	log.Debugln(file_args)
 
-	if len(file_args) == 0 {
-		log.Debugln("Stop system no file set")
-		os.Exit(0)
+	if len(file_args) > 0 {
+		files, err = run_files(file_args)
+		if err != nil {
+			return fmt.Errorf("error processing files: %v", err)
+		}
 	} else {
-		files = run_files(file_args)
+		return fmt.Errorf("no files or directories provided. Use 'shred --help' for usage information")
+
 	}
 
-	wg := sync.WaitGroup{}
+	// Fortschrittsleiste erstellen
+	bar := pb.StartNew(len(files))
+	bar.SetTemplateString(`{{counters . }} {{bar . }} {{percent . }} {{etime . }}`)
 
-	// shread all files with wipe
+	wg := sync.WaitGroup{}
+	errCh := make(chan error, len(files)) // Fehlerkanal
+
+	// Shred all files with wipe
 	for _, file := range files {
 		log.Debugln("delete file: " + file)
 
 		wg.Add(1)
 		go func(file_ string, wg *sync.WaitGroup) {
+			defer wg.Done()
 			err := wipe.Wipe(file_, wrule)
 			if err != nil {
-				panic(err)
+				errCh <- fmt.Errorf("failed to wipe file %s: %v", file_, err)
+				return
 			}
 			if !keep {
 				base_name := filepath.Base(file_)
-				base_name = strings.Repeat("0", len(base_name))
-				os.Rename(file_, filepath.Join(filepath.Dir(file_), base_name))
-				err = os.Remove(filepath.Join(filepath.Dir(file_), base_name))
+				newName := strings.Repeat("0", len(base_name))
+				new_path := filepath.Join(filepath.Dir(file_), newName)
+				log.Debugf("Renaming file %s to %s", file_, new_path)
+				err = os.Rename(file_, new_path)
 				if err != nil {
-					os.Exit(1)
+					log.Errorf("Failed to rename file %s: %v", file_, err)
+					return
+				}
+				time.Sleep(100 * time.Millisecond) // Kurze Verzögerung
+				log.Debugf("Removing file %s", new_path)
+				err = os.Remove(new_path)
+				if err != nil {
+					log.Errorf("Failed to remove file %s: %v", new_path, err)
+					return
 				}
 			}
-			wg.Done()
+			bar.Increment() // Fortschrittsleiste aktualisieren
 		}(file, &wg)
 	}
 
-	wg.Wait()
+	// Warte auf alle Goroutines
+	go func() {
+		wg.Wait()
+		close(errCh) // Schließe den Fehlerkanal, wenn alle Goroutines fertig sind
+	}()
 
+	// Sammle Fehler
+	var errors []error
+	for err := range errCh {
+		errors = append(errors, err)
+	}
+
+	bar.Finish() // Fortschrittsleiste beenden
+
+	// Gib alle gesammelten Fehler zurück
+	if len(errors) > 0 {
+		return fmt.Errorf("encountered %d errors during processing: %v", len(errors), errors)
+	}
+
+	return nil
 }
 
-func run_files(files []string) []string {
+func run_files(files []string) ([]string, error) {
 	var ret_file []string
 	for _, file := range files {
-
 		log.Infoln("check file: " + file)
 		fi, err := os.Stat(file)
 		if err != nil {
-			log.Println(err)
-			os.Exit(1)
+			return nil, fmt.Errorf("failed to stat file %s: %v", file, err)
 		}
 
 		if fi.Mode().IsDir() {
-			filepath.Walk(file, func(path string, info os.FileInfo, err error) error {
+			err := filepath.Walk(file, func(path string, info os.FileInfo, err error) error {
 				if err != nil {
 					return err
 				}
 				if info.Mode().IsRegular() {
-					ret_file = append(ret_file, path)
+					absPath, err := filepath.Abs(path)
+					if err != nil {
+						return fmt.Errorf("failed to get absolute path for %s: %v", path, err)
+					}
+					ret_file = append(ret_file, absPath)
 				}
-
 				return nil
 			})
 			if err != nil {
-				log.Println(err)
+				return nil, fmt.Errorf("failed to walk directory %s: %v", file, err)
 			}
 		} else {
-			path, _ := filepath.Abs(file)
-			ret_file = append(ret_file, path)
+			absPath, err := filepath.Abs(file)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get absolute path for %s: %v", file, err)
+			}
+			ret_file = append(ret_file, absPath)
 		}
-
 	}
-	return ret_file
+	return ret_file, nil
 }
