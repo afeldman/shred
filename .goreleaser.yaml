@@ -48,15 +48,3 @@ brews:
     test: |
       system "#{bin}/shred", "--version"
     skip_upload: auto
-
-gofish:
-  - name: shred
-    repository:
-      owner: afeldman
-      name: fish-food
-      token: "{{ .Env.FISH_FOOD_TOKEN }}"
-    directory: Food
-    homepage: "https://github.com/afeldman/shred"
-    description: "Secure file deletion (Gutmann, DoD, VSITR)"
-    license: "Apache-2.0"
-    skip_upload: auto
