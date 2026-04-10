@@ -30,13 +30,13 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
 
-  update-fish-food:
-    needs: [release]
-    uses: afeldman/fish-food/.github/workflows/update-food.yml@master
-    with:
-      name: shred
-      version: ${{ github.ref_name }}
-      description: "Secure file deletion (Gutmann, DoD, VSITR)"
-      github_repo: afeldman/shred
-    secrets:
-      fish_food_token: ${{ secrets.FISH_FOOD_TOKEN }}
+  #update-fish-food:
+  #  needs: [release]
+  #  uses: afeldman/fish-food/.github/workflows/update-food.yml@master
+  #  with:
+  #    name: shred
+  #    version: ${{ github.ref_name }}
+  #    description: "Secure file deletion (Gutmann, DoD, VSITR)"
+  #    github_repo: afeldman/shred
+  #  secrets:
+  #    fish_food_token: ${{ secrets.FISH_FOOD_TOKEN }}
